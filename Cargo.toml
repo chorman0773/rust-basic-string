@@ -1,0 +1,16 @@
+[package]
+name = "rust-basic-string"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[features]
+alloc = []
+allocator-api = ["alloc"]
+std = ["alloc"]
+const-from-chars = ["const-trait-impl"]
+const-trait-impl = []
+default = ["const-trait-impl"] # Hack since otherwise it doesn't compile
