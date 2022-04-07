@@ -1,4 +1,4 @@
-use core::{cmp::Ordering, marker::PhantomData};
+use core::{cmp::Ordering, hash::Hash, marker::PhantomData};
 
 use crate::{
     traits::{Char, CharTraits, DebugStr, DisplayStr},
@@ -264,3 +264,29 @@ pub type UtfCStr<CharT> = BasicCStr<CharT, UtfCharTraits<CharT>>;
 pub type Utf8CStr = UtfCStr<u8>;
 pub type Utf16CStr = UtfCStr<u16>;
 pub type Utf32CStr = UtfCStr<char>;
+
+impl<Traits: CharTraits> Ord for BasicCStr<Traits::Char, Traits> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        unsafe { Traits::compare(self.as_chars(), other.as_chars()).unwrap_unchecked() }
+    }
+}
+
+impl<CharT: Eq, Traits> PartialEq for BasicCStr<CharT, Traits> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_chars() == other.as_chars()
+    }
+}
+
+impl<Traits: CharTraits> PartialOrd for BasicCStr<Traits::Char, Traits> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<CharT: Eq, Traits> Eq for BasicCStr<CharT, Traits> {}
+
+impl<CharT: Hash, Traits> Hash for BasicCStr<CharT, Traits> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.1.hash(state);
+    }
+}

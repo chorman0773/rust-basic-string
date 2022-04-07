@@ -1,16 +1,20 @@
+use core::borrow::Borrow;
+use core::borrow::BorrowMut;
+use core::cmp::Ordering;
+use core::hash::Hash;
+use core::hash::Hasher;
 use core::marker::PhantomData;
-use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ops::DerefMut;
 
-use alloc::alloc::Global;
-
 #[cfg(feature = "allocator-api")]
-use alloc::alloc::Allocator;
+use alloc::alloc::{Allocator, Global};
+
+#[cfg(not(feature = "allocator-api"))]
+use crate::placeholders::*;
 
 use crate::str::BasicStr;
 use crate::traits::CharTraits;
-use crate::traits::IntoChars;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -19,90 +23,166 @@ use alloc::vec::Vec;
 pub struct BasicString<CharT, Traits, A: Allocator = Global> {
     inner: Vec<CharT, A>,
     _traits: PhantomData<Traits>,
+    _allocator: PhantomData<A>,
 }
 
 #[cfg(not(feature = "allocator-api"))]
-pub struct BasicString<CharT, Traits> {
+pub struct BasicString<CharT, Traits, A: Allocator = Global> {
     inner: Vec<CharT>,
     _traits: PhantomData<Traits>,
+    _allocator: PhantomData<A>,
 }
 
-impl<CharT, Traits> BasicString<CharT, Traits> {
+impl<CharT, Traits> BasicString<CharT, Traits, Global> {
     pub const fn new() -> Self {
         Self {
             inner: Vec::new(),
             _traits: PhantomData,
+            _allocator: PhantomData,
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(cap: usize) -> Self {
         Self {
-            inner: Vec::with_capacity(capacity),
+            inner: Vec::with_capacity(cap),
             _traits: PhantomData,
+            _allocator: PhantomData,
         }
     }
 }
 
 #[cfg(feature = "allocator-api")]
 impl<CharT, Traits, A: Allocator> BasicString<CharT, Traits, A> {
-    pub fn from_boxed_str(b: Box<BasicStr<CharT, Traits>, A>) -> Self {
+    pub const fn new_in(alloc: A) -> Self {
         Self {
-            inner: Vec::from(BasicStr::into_boxed_chars(b)),
+            inner: Vec::new_in(alloc),
             _traits: PhantomData,
+            _allocator: PhantomData,
         }
     }
 
-    pub fn into_boxed_str(self) -> Box<BasicStr<CharT, Traits>, A> {
-        unsafe { BasicStr::from_boxed_chars_unchecked(self.inner.into_boxed_slice()) }
+    pub fn with_capacity_in(cap: usize, alloc: A) -> Self {
+        Self {
+            inner: Vec::with_capacity_in(cap, alloc),
+            _traits: PhantomData,
+            _allocator: PhantomData,
+        }
     }
 
-    pub fn into_chars(self) -> Vec<CharT, A> {
-        self.inner
-    }
-
-    pub unsafe fn from_chars_unchecked(chars: Vec<CharT, A>) -> Self {
+    #[cfg(feature = "allocator-api")]
+    pub const unsafe fn from_chars_unchecked(chars: Vec<CharT, A>) -> Self {
         Self {
             inner: chars,
             _traits: PhantomData,
+            _allocator: PhantomData,
         }
     }
 
-    pub fn push_str<S: AsRef<BasicStr<CharT, Traits>>>(&mut self, s: &S)
-    where
-        CharT: Clone,
-    {
-        let str = s.as_ref();
-        self.inner.extend_from_slice(str.as_chars());
-    }
-}
-
-#[cfg(not(feature = "allocator-api"))]
-impl<CharT, Traits> BasicString<CharT, Traits> {
-    pub fn from_boxed_str(b: Box<BasicStr<CharT, Traits>>) -> Self {
+    #[cfg(not(feature = "allocator-api"))]
+    pub const unsafe fn from_chars_unchecked(chars: Vec<CharT>) -> Self {
         Self {
-            inner: Vec::from(BasicStr::into_boxed_chars(b)),
+            inner: chars,
             _traits: PhantomData,
+            _allocator: PhantomData,
         }
     }
 
-    pub fn into_boxed_str(self) -> Box<BasicStr<CharT, Traits>> {
-        unsafe { BasicStr::from_boxed_chars_unchecked(self.inner.into_boxed_slice()) }
-    }
-
+    #[cfg(feature = "allocator-api")]
     pub fn into_chars(self) -> Vec<CharT, A> {
         self.inner
     }
 
-    pub fn push_str<S: AsRef<BasicStr<CharT, Traits>>>(&mut self, s: &S)
-    where
-        CharT: Clone,
-    {
-        let str = s.as_ref();
-        self.inner.extend_from_slice(str.as_chars());
+    #[cfg(not(feature = "allocator-api"))]
+    pub fn into_chars(self) -> Vec<CharT> {
+        self.inner
+    }
+
+    #[cfg(feature = "allocator-api")]
+    pub fn from_boxed_str(str: Box<BasicStr<CharT, Traits>, A>) -> Self {
+        unsafe { Self::from_chars_unchecked(str.into_boxed_chars().into()) }
+    }
+
+    #[cfg(not(feature = "allocator-api"))]
+    pub fn from_boxed_str(str: Box<BasicStr<CharT, Traits>>) -> Self {
+        unsafe { Self::from_chars_unchecked(str.into_boxed_chars().into()) }
     }
 }
 
 #[cfg(feature = "allocator-api")]
+pub struct FromCharsError<CharT, FromCharsErr, A: Allocator = Global> {
+    err: FromCharsErr,
+    chars: Vec<CharT, A>,
+    _allocator: PhantomData<A>,
+}
+
+#[cfg(not(feature = "allocator-api"))]
+pub struct FromCharsError<CharT, CharsErr, A: Allocator = Global> {
+    err: CharsErr,
+    chars: Vec<CharT>,
+    _allocator: PhantomData<A>,
+}
+
+impl<CharT, CharsErr, A: Allocator> FromCharsError<CharT, CharsErr, A> {
+    #[cfg(feature = "allocator-api")]
+    pub fn into_bytes(self) -> Vec<CharT, A> {
+        self.chars
+    }
+
+    #[cfg(not(feature = "allocator-api"))]
+    pub fn into_bytes(self) -> Vec<CharT> {
+        self.chars
+    }
+
+    pub fn as_bytes(&self) -> &[CharT] {
+        &self.chars
+    }
+
+    pub fn chars_error(&self) -> CharsErr
+    where
+        CharsErr: Clone,
+    {
+        self.err.clone()
+    }
+}
+
+impl<Traits: CharTraits, A: Allocator> BasicString<Traits::Char, Traits, A> {
+    #[cfg(feature = "allocator-api")]
+    pub fn from_chars(
+        chars: Vec<Traits::Char, A>,
+    ) -> Result<Self, FromCharsError<Traits::Char, Traits::Error, A>> {
+        match Traits::validate_range(&chars) {
+            Ok(()) => Ok(Self {
+                inner: chars,
+                _traits: PhantomData,
+                _allocator: PhantomData,
+            }),
+            Err(err) => Err(FromCharsError {
+                err,
+                chars,
+                _allocator: PhantomData,
+            }),
+        }
+    }
+
+    #[cfg(not(feature = "allocator-api"))]
+    pub fn from_chars(
+        chars: Vec<Traits::Char>,
+    ) -> Result<Self, FromCharsError<Traits::Char, Traits::Error, A>> {
+        match Traits::validate_range(&chars) {
+            Ok(()) => Ok(Self {
+                inner: chars,
+                _traits: PhantomData,
+                _allocator: PhantomData,
+            }),
+            Err(err) => Err(FromCharsError {
+                err,
+                chars,
+                _allocator: PhantomData,
+            }),
+        }
+    }
+}
+
 impl<CharT, Traits, A: Allocator> Deref for BasicString<CharT, Traits, A> {
     type Target = BasicStr<CharT, Traits>;
 
@@ -110,180 +190,100 @@ impl<CharT, Traits, A: Allocator> Deref for BasicString<CharT, Traits, A> {
         unsafe { BasicStr::from_chars_unchecked(&self.inner) }
     }
 }
-
-#[cfg(not(feature = "allocator-api"))]
-impl<CharT, Traits> Deref for BasicString<CharT, Traits> {
-    type Target = BasicStr<CharT, Traits>;
-
-    fn deref(&self) -> &BasicStr<CharT, Traits> {
-        unsafe { BasicStr::from_chars_unchecked(&self.inner) }
-    }
-}
-
-#[cfg(feature = "allocator-api")]
 impl<CharT, Traits, A: Allocator> DerefMut for BasicString<CharT, Traits, A> {
     fn deref_mut(&mut self) -> &mut BasicStr<CharT, Traits> {
         unsafe { BasicStr::from_chars_unchecked_mut(&mut self.inner) }
     }
 }
 
-#[cfg(not(feature = "allocator-api"))]
-impl<CharT, Traits> DerefMut for BasicString<CharT, Traits> {
-    fn deref_mut(&mut self) -> &mut BasicStr<CharT, Traits> {
-        unsafe { BasicStr::from_chars_unchecked_mut(&mut self.inner) }
-    }
-}
-
-#[cfg(feature = "allocator-api")]
-impl<CharT, Traits: CharTraits<Char = CharT> + IntoChars, A: Allocator>
-    BasicString<CharT, Traits, A>
+impl<CharT, Traits, A: Allocator> Borrow<BasicStr<CharT, Traits>>
+    for BasicString<CharT, Traits, A>
 {
-    pub fn push(&mut self, c: char) {
-        let max_len = Traits::max_encoding_len();
-        self.inner.reserve(max_len);
-        let chars = unsafe { self.inner.as_mut_ptr().add(self.inner.len()) };
-        let uninit_chars =
-            unsafe { core::slice::from_raw_parts_mut(chars as *mut MaybeUninit<CharT>, max_len) };
-        for char in uninit_chars {
-            char.write(Traits::zero_term()); // We can insert anything, but `Traits::zero_term()` is a known-valid bitpattern
-        }
-        let nlen = self.inner.len()
-            + Traits::encode(c, unsafe {
-                core::slice::from_raw_parts_mut(chars, max_len)
-            })
-            .len();
-
-        unsafe {
-            self.inner.set_len(nlen);
-        }
+    fn borrow(&self) -> &BasicStr<CharT, Traits> {
+        self
     }
 }
 
-#[cfg(not(feature = "allocator-api"))]
-impl<CharT, Traits: CharTraits<Char = CharT> + IntoChars> BasicString<CharT, Traits> {
-    pub fn push(&mut self, c: char) {
-        let max_len = Traits::max_encoding_len();
-        self.inner.reserve(max_len);
-        let chars = unsafe { self.inner.as_mut_ptr().add(self.inner.len()) };
-        let uninit_chars =
-            unsafe { core::slice::from_raw_parts_mut(chars as *mut MaybeUninit<CharT>, max_len) };
-        for char in uninit_chars {
-            char.write(Traits::zero_term()); // We can insert anything, but `Traits::zero_term()` is a known-valid bitpattern
-        }
-        let nlen = self.inner.len()
-            + Traits::encode(c, unsafe {
-                core::slice::from_raw_parts_mut(chars, max_len)
-            })
-            .len();
-
-        unsafe {
-            self.inner.set_len(nlen);
-        }
+impl<CharT, Traits, A: Allocator> BorrowMut<BasicStr<CharT, Traits>>
+    for BasicString<CharT, Traits, A>
+{
+    fn borrow_mut(&mut self) -> &mut BasicStr<CharT, Traits> {
+        self
     }
 }
 
-#[cfg(feature = "allocator-api")]
-pub struct FromCharsError<Traits: CharTraits, A: Allocator = alloc::alloc::Global> {
-    chars: Vec<Traits::Char, A>,
-    error: Traits::Error,
-}
-
-#[cfg(feature = "allocator-api")]
-impl<Traits: CharTraits, A: Allocator> FromCharsError<Traits, A> {
-    pub fn as_chars(&self) -> &[Traits::Char] {
-        &self.chars
-    }
-
-    pub fn into_chars(self) -> Vec<Traits::Char, A> {
-        self.chars
-    }
-
-    pub fn error(&self) -> &Traits::Error {
-        &self.error
-    }
-}
-
-#[cfg(feature = "allocator-api")]
-impl<Traits: CharTraits, A: Allocator> core::fmt::Debug for FromCharsError<Traits, A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("FromCharsError")
-            .field("error", &self.error)
-            .finish()
-    }
-}
-
-#[cfg(feature = "allocator-api")]
-impl<Traits: CharTraits, A: Allocator> core::fmt::Display for FromCharsError<Traits, A>
+impl<S: ?Sized, CharT, Traits, A: Allocator> AsRef<S> for BasicString<CharT, Traits, A>
 where
-    Traits::Error: core::fmt::Display,
+    BasicStr<CharT, Traits>: AsRef<S>,
 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.error.fmt(f)
+    fn as_ref(&self) -> &S {
+        BasicStr::as_ref(self)
     }
 }
 
-#[cfg(not(feature = "allocator-api"))]
-pub struct FromCharsError<Traits: CharTraits> {
-    chars: Vec<Traits::Char>,
-    error: Traits::Error,
-}
-
-#[cfg(not(feature = "allocator-api"))]
-impl<Traits: CharTraits> FromCharsError<Traits> {
-    pub fn as_chars(&self) -> &[Traits::Char] {
-        &self.chars
-    }
-
-    pub fn into_chars(self) -> Vec<Traits::Char> {
-        self.chars
-    }
-
-    pub fn error(&self) -> &Traits::Error {
-        &self.error
-    }
-}
-
-#[cfg(not(feature = "allocator-api"))]
-impl<Traits: CharTraits> core::fmt::Debug for FromCharsError<Traits> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FromCharsError")
-            .field("error", &self.error)
-            .finish()
-    }
-}
-
-#[cfg(not(feature = "allocator-api"))]
-impl<Traits: CharTraits> core::fmt::Display for FromCharsError<Traits>
+impl<S: ?Sized, CharT, Traits, A: Allocator> AsMut<S> for BasicString<CharT, Traits, A>
 where
-    Traits::Error: core::fmt::Display,
+    BasicStr<CharT, Traits>: AsMut<S>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.error.fmt(f)
+    fn as_mut(&mut self) -> &mut S {
+        BasicStr::as_mut(self)
     }
 }
 
-#[cfg(feature = "allocator-api")]
-impl<CharT, Traits: CharTraits<Char = CharT>, A: Allocator> BasicString<CharT, Traits, A> {
-    pub fn from_chars(chars: Vec<CharT, A>) -> Result<Self, FromCharsError<Traits, A>> {
-        match Traits::validate_range(&chars) {
-            Ok(()) => Ok(Self {
-                inner: chars,
-                _traits: PhantomData,
-            }),
-            Err(error) => Err(FromCharsError { chars, error }),
-        }
+impl<CharT: Eq, Traits, A: Allocator> PartialEq for BasicString<CharT, Traits, A> {
+    fn eq(&self, other: &Self) -> bool {
+        BasicStr::eq(&**self, &**other)
     }
 }
 
-#[cfg(not(feature = "allocator-api"))]
-impl<CharT, Traits: CharTraits<Char = CharT>> BasicString<CharT, Traits> {
-    pub fn from_chars(chars: Vec<CharT>) -> Result<Self, FromCharsError<Traits>> {
-        match Traits::validate_range(&chars) {
-            Ok(()) => Ok(Self {
-                inner: chars,
-                _traits: PhantomData,
-            }),
-            Err(error) => Err(FromCharsError { chars, error }),
-        }
+impl<CharT: Eq, Traits, A: Allocator> PartialEq<BasicStr<CharT, Traits>>
+    for BasicString<CharT, Traits, A>
+{
+    fn eq(&self, other: &BasicStr<CharT, Traits>) -> bool {
+        BasicStr::eq(&**self, other)
+    }
+}
+
+impl<CharT: Eq, Traits, A: Allocator> PartialEq<BasicString<CharT, Traits, A>>
+    for BasicStr<CharT, Traits>
+{
+    fn eq(&self, other: &BasicString<CharT, Traits, A>) -> bool {
+        BasicStr::eq(self, &**other)
+    }
+}
+
+impl<CharT: Eq, Traits, A: Allocator> Eq for BasicString<CharT, Traits, A> {}
+
+impl<Traits: CharTraits, A: Allocator> PartialOrd for BasicString<Traits::Char, Traits, A> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        BasicStr::partial_cmp(&**self, &**other)
+    }
+}
+
+impl<Traits: CharTraits, A: Allocator> PartialOrd<BasicStr<Traits::Char, Traits>>
+    for BasicString<Traits::Char, Traits, A>
+{
+    fn partial_cmp(&self, other: &BasicStr<Traits::Char, Traits>) -> Option<Ordering> {
+        BasicStr::partial_cmp(&**self, other)
+    }
+}
+
+impl<Traits: CharTraits, A: Allocator> PartialOrd<BasicString<Traits::Char, Traits, A>>
+    for BasicStr<Traits::Char, Traits>
+{
+    fn partial_cmp(&self, other: &BasicString<Traits::Char, Traits, A>) -> Option<Ordering> {
+        BasicStr::partial_cmp(self, &**other)
+    }
+}
+
+impl<Traits: CharTraits, A: Allocator> Ord for BasicString<Traits::Char, Traits, A> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        BasicStr::cmp(self, other)
+    }
+}
+
+impl<CharT: Hash, Traits, A: Allocator> Hash for BasicString<CharT, Traits, A> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        BasicStr::hash(self, state);
     }
 }

@@ -132,7 +132,7 @@ pub trait ValidationError: core::fmt::Debug {
 /// A trait for types that can be used in String Types and String Views/String Slices
 pub trait CharTraits {
     /// The Character Type for these traits
-    type Char: Char<Int = Self::Int> + Eq;
+    type Char: Char<Int = Self::Int>;
     /// The Integer type
     type Int: Copy + Sized + Ord;
     /// The Type that Is returned when validation of a range fails
@@ -166,7 +166,7 @@ pub trait CharTraits {
     unsafe fn validate_subrange(buf: &[Self::Char]) -> Result<(), Self::Error>;
 
     /// Compares two strings lexicographically
-    /// This does not need to be consistent with the [`Ord`] impl of `Char`.
+    /// This does not need to be consistent with the [`Ord`] impl of `Char`, but should be consistent with [`Eq`] and must be asymmetric and transitive.
     ///
     /// # Errors
     ///
@@ -182,7 +182,7 @@ pub trait CharTraits {
     fn zero_term() -> Self::Char;
 
     /// Checks if the given character is the zero terminator
-    /// [`CharTraits::is_zero_term`] shall hold for [`CharTraits::zero_term`]
+    /// Should be equivalent to `c==Self::zero_term()` but may be optimized if comparison may be slower.
     fn is_zero_term(c: Self::Char) -> bool;
 
     /// The "End of File" Sentinel.

@@ -10,7 +10,7 @@ edition = "2021"
 [features]
 alloc = []
 allocator-api = ["alloc"]
-# std = ["alloc"]
+std = ["alloc"]
 const-from-chars = ["const-trait-impl"]
 const-trait-impl = []
 const-utf-char-traits = ["const-trait-impl"]

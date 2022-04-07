@@ -1,3 +1,5 @@
+use core::cmp::Ordering;
+use core::hash::Hash;
 use core::ops::{Index, IndexMut};
 use core::{marker::PhantomData, slice::SliceIndex};
 
@@ -256,5 +258,31 @@ impl<CharT: Char, Traits: CharTraits<Char = CharT> + DisplayStr> core::fmt::Disp
 {
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         unsafe { Traits::display_range_unchecked(self.as_chars(), fmt) }
+    }
+}
+
+impl<Traits: CharTraits> Ord for BasicStr<Traits::Char, Traits> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Traits::compare(self.as_chars(), other.as_chars()).unwrap()
+    }
+}
+
+impl<CharT: Eq, Traits> PartialEq for BasicStr<CharT, Traits> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_chars() == other.as_chars()
+    }
+}
+
+impl<Traits: CharTraits> PartialOrd for BasicStr<Traits::Char, Traits> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<CharT: Eq, Traits> Eq for BasicStr<CharT, Traits> {}
+
+impl<CharT: Hash, Traits> Hash for BasicStr<CharT, Traits> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.1.hash(state);
     }
 }
