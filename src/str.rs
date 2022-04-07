@@ -171,7 +171,17 @@ impl<CharT, Traits: CharTraits<Char = CharT>> BasicStr<CharT, Traits> {
 }
 
 #[cfg(not(feature = "const-trait-impl"))]
-impl<C: Char, Traits: CharTraits> AsRef<[C]> for BasicStr<C, Traits> {
+impl<'a, C, Traits> Default for &'a BasicStr<C, Traits>
+where
+    BasicStr<C, Traits>: 'a,
+{
+    fn default() -> &'a BasicStr<C, Trait> {
+        unsafe { BasicStr::from_chars_unchecked(&[]) }
+    }
+}
+
+#[cfg(not(feature = "const-trait-impl"))]
+impl<C, Traits> AsRef<[C]> for BasicStr<C, Traits> {
     fn as_ref(&self) -> &[C] {
         self.as_chars()
     }
@@ -209,11 +219,54 @@ impl<C: Char, Traits: CharTraits<Char = C>, I: SliceIndex<[C], Output = [C]>> In
     }
 }
 
+#[cfg(feature = "utf")]
+impl Str {
+    pub const fn from_str(x: &str) -> &Self {
+        // SAFETY:
+        // `Str` and `str` have the same invariant, thus `UtfCharTraits<u8>::validate_range` is trivially satisfied for the bytes of `str
+        unsafe { Self::from_chars_unchecked(x.as_bytes()) }
+    }
+
+    pub fn from_str_mut(x: &mut str) -> &mut Self {
+        // SAFETY:
+        // `Str` and `str` have the same invariant, thus `UtfCharTraits<u8>::validate_range` is trivially satisfied for the bytes of `str`
+        // Further, no mutation via `&mut Self` can break this invariant
+        unsafe { Self::from_chars_unchecked_mut(x.as_bytes_mut()) }
+    }
+
+    pub const fn as_str(&self) -> &str {
+        // SAFETY:
+        // `Str` and `str` have the same invariant, thus self.as_chars() is valid utf8
+        unsafe { core::str::from_utf8_unchecked(self.as_chars()) }
+    }
+
+    pub fn as_str_mut(&mut self) -> &mut str {
+        // SAFETY:
+        // `Str` and `str` have the same invariant, thus self.as_chars() is valid utf8
+        // Further, no mutation via `&mut str` can break this invariant
+        unsafe { core::str::from_utf8_unchecked_mut(self.as_chars_mut()) }
+    }
+}
+
+#[cfg(feature = "utf")]
+impl U32Str {
+    pub const fn new(chars: &[char]) -> &Self {
+        // SAFETY:
+        // Validity of `[char]` for `UtfCharTraits<char>` is trivial
+        unsafe { Self::from_chars_unchecked(chars) }
+    }
+}
+
+#[cfg(feature = "utf")]
 pub type UtfStr<CharT> = BasicStr<CharT, UtfCharTraits<CharT>>;
+#[cfg(feature = "utf")]
 pub type Str = BasicStr<u8, UtfCharTraits<u8>>;
+#[cfg(feature = "utf")]
 pub type U16Str = BasicStr<u16, UtfCharTraits<u16>>;
+#[cfg(feature = "utf")]
 pub type U32Str = BasicStr<char, UtfCharTraits<char>>;
 
+#[cfg(feature = "utf")]
 impl AsRef<U32Str> for [char] {
     fn as_ref(&self) -> &U32Str {
         // SAFETY:
@@ -222,6 +275,7 @@ impl AsRef<U32Str> for [char] {
     }
 }
 
+#[cfg(feature = "utf")]
 impl AsRef<Str> for str {
     fn as_ref(&self) -> &Str {
         // SAFETY:
@@ -230,6 +284,7 @@ impl AsRef<Str> for str {
     }
 }
 
+#[cfg(feature = "utf")]
 impl AsRef<str> for Str {
     fn as_ref(&self) -> &str {
         // SAFETY:

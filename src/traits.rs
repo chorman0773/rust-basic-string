@@ -140,6 +140,10 @@ pub trait CharTraits {
 
     /// Performs a validiation of the input range
     ///
+    /// An empty range shall be trivially valid.
+    /// `unsafe` code using `unsafe` functions in this and any subtrait,
+    /// or any functions in `unsafe` subtraits may rely on this property for those functions
+    ///
     /// # Errors
     ///
     /// Returns an error if the range is not valid text

@@ -287,3 +287,24 @@ impl<CharT: Hash, Traits, A: Allocator> Hash for BasicString<CharT, Traits, A> {
         BasicStr::hash(self, state);
     }
 }
+
+#[cfg(feature = "utf")]
+pub type UtfString<CharT, A = Global> = BasicString<CharT, crate::utf::UtfCharTraits<CharT>, A>;
+
+#[cfg(feature = "utf")]
+pub type String = UtfString<u8>;
+#[cfg(feature = "utf")]
+pub type U16String = UtfString<u16>;
+#[cfg(feature = "utf")]
+pub type U32String = UtfString<char>;
+
+#[cfg(feature = "utf")]
+impl String {
+    pub fn from_utf8(st: alloc::string::String) -> Self {
+        unsafe { Self::from_chars_unchecked(st.into_bytes()) }
+    }
+
+    pub fn into_utf8(self) -> alloc::string::String {
+        unsafe { alloc::string::String::from_utf8_unchecked(self.into_chars()) }
+    }
+}

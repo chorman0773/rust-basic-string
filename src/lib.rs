@@ -9,9 +9,12 @@ extern crate alloc;
 pub(crate) mod placeholders;
 
 pub mod cstr;
+#[cfg(feature = "alloc")]
+pub mod cstring;
 pub mod str;
 #[cfg(feature = "alloc")]
 pub mod string;
 pub mod traits;
+#[cfg(feature = "utf")]
 pub mod utf;
 pub mod view;

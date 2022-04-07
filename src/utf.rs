@@ -270,3 +270,10 @@ where
         Ok(())
     }
 }
+
+#[macro_export]
+macro_rules! u8str {
+    ($lit:literal) => {
+        $crate::str::Str::from_str($lit)
+    };
+}

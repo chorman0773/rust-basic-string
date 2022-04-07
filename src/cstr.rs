@@ -259,10 +259,16 @@ impl<CharT: Char, Traits: CharTraits<Char = CharT> + DisplayStr> core::fmt::Disp
     }
 }
 
+#[cfg(feature = "utf")]
 pub type UtfCStr<CharT> = BasicCStr<CharT, UtfCharTraits<CharT>>;
 
+#[cfg(feature = "utf")]
 pub type Utf8CStr = UtfCStr<u8>;
+
+#[cfg(feature = "utf")]
 pub type Utf16CStr = UtfCStr<u16>;
+
+#[cfg(feature = "utf")]
 pub type Utf32CStr = UtfCStr<char>;
 
 impl<Traits: CharTraits> Ord for BasicCStr<Traits::Char, Traits> {
