@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ops::DerefMut;
-use std::mem::MaybeUninit;
 
 use alloc::alloc::Global;
 
@@ -11,6 +11,9 @@ use alloc::alloc::Allocator;
 use crate::str::BasicStr;
 use crate::traits::CharTraits;
 use crate::traits::IntoChars;
+
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 #[cfg(feature = "allocator-api")]
 pub struct BasicString<CharT, Traits, A: Allocator = Global> {
@@ -202,7 +205,7 @@ impl<Traits: CharTraits, A: Allocator> FromCharsError<Traits, A> {
 
 #[cfg(feature = "allocator-api")]
 impl<Traits: CharTraits, A: Allocator> core::fmt::Debug for FromCharsError<Traits, A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("FromCharsError")
             .field("error", &self.error)
             .finish()
@@ -214,7 +217,7 @@ impl<Traits: CharTraits, A: Allocator> core::fmt::Display for FromCharsError<Tra
 where
     Traits::Error: core::fmt::Display,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.error.fmt(f)
     }
 }

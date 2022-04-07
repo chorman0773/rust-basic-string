@@ -95,28 +95,11 @@ impl<CharT, Traits> BasicStr<CharT, Traits> {
     }
 }
 
-impl<CharT, Traits: CharTraits<Char = CharT>> BasicStr<CharT, Traits> {
-    /// Obtains a [`BasicStr`] from a slice of
-    #[cfg(feature = "const-from-chars")]
-    pub const fn from_chars(chars: &[CharT]) -> Result<&Self, Traits::Error>
-    where
-        Traits: ~const CharTraits<Char = CharT>,
-        Traits::Error: ~const Drop,
-    {
-        match Traits::validate_range(chars) {
-            Ok(()) => Ok(unsafe { Self::from_chars_unchecked(chars) }),
-            Err(e) => Err(e),
-        }
-    }
+#[cfg(feature = "const-from-chars")]
+include!("str_from_chars_const.rs");
 
-    #[cfg(not(feature = "const-from-chars"))]
-    pub fn from_chars(chars: &[CharT]) -> Result<&Self, Traits::Error> {
-        Traits::validate_range(chars)?;
-        // SAFETY:
-        // [`CharTraits::validate_range`] has already validated the range
-        Ok(unsafe { Self::from_chars_unchecked(chars) })
-    }
-}
+#[cfg(not(feature = "const-from-chars"))]
+include!("str_from_chars.rs");
 
 impl<CharT, Traits: CharTraits<Char = CharT>> BasicStr<CharT, Traits> {
     pub fn from_chars_mut(chars: &mut [CharT]) -> Result<&mut Self, Traits::Error> {
@@ -193,11 +176,7 @@ impl<C: Char, Traits: CharTraits> AsRef<[C]> for BasicStr<C, Traits> {
 }
 
 #[cfg(feature = "const-trait-impl")]
-impl<C: Char, Traits: CharTraits> const AsRef<[C]> for BasicStr<C, Traits> {
-    fn as_ref(&self) -> &[C] {
-        self.as_chars()
-    }
-}
+include!("str_const_trait_impl.rs");
 
 impl<C: Char, Traits: CharTraits<Char = C>, I: SliceIndex<[C], Output = [C]>> Index<I>
     for BasicStr<C, Traits>

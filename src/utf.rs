@@ -106,142 +106,11 @@ impl ValidationError for UtfError {
     }
 }
 
-impl CharTraits for UtfCharTraits<u8> {
-    type Char = u8;
-    type Int = i32;
-    type Error = UtfError;
+#[cfg(feature = "const-utf-char-traits")]
+include!("utf_const_char_traits.rs");
 
-    fn validate_range(buf: &[Self::Char]) -> Result<(), Self::Error> {
-        core::str::from_utf8(buf).map(drop).map_err(From::from)
-    }
-
-    unsafe fn validate_subrange(buf: &[Self::Char]) -> Result<(), Self::Error> {
-        if buf.is_empty() {
-            Ok(())
-        } else if buf[0] & 0xc0 == 0x80 {
-            Err(UtfError {
-                pos: 0,
-                len: Some(1),
-            })
-        } else if buf.len() == 1 {
-            Ok(())
-        } else {
-            for (i, &c) in buf.iter().rev().enumerate() {
-                if c & 0xc0 == 0x80 {
-                    continue;
-                } else if ((c & 0x80 == 0x00) && i == 0)
-                    || ((c & 0xe0 == 0xc0) && i == 1)
-                    || (i == 2)
-                {
-                    return Ok(());
-                }
-            }
-            Err(UtfError {
-                pos: buf.len(),
-                len: None,
-            })
-        }
-    }
-
-    fn compare(r1: &[Self::Char], r2: &[Self::Char]) -> Result<Ordering, Self::Error> {
-        Ok(r1.cmp(r2))
-    }
-
-    fn zero_term() -> Self::Char {
-        0
-    }
-
-    fn eof() -> Self::Int {
-        -1
-    }
-}
-
-impl CharTraits for UtfCharTraits<u16> {
-    type Char = u16;
-
-    type Int = i32;
-
-    type Error = UtfError;
-
-    fn validate_range(buf: &[Self::Char]) -> Result<(), Self::Error> {
-        let mut iter = buf.iter().enumerate();
-
-        while let Some((i, &c)) = iter.next() {
-            if (0xD800..=0xDBFF).contains(&c) {
-                let (_, &c) = iter.next().ok_or(UtfError { pos: i, len: None })?;
-                if !(0xDC00..=0xDFFF).contains(&c) {
-                    return Err(UtfError {
-                        pos: i,
-                        len: Some(2),
-                    });
-                }
-            } else if (0xDC00..=0xDFFF).contains(&c) {
-                return Err(UtfError {
-                    pos: i,
-                    len: Some(1),
-                });
-            }
-        }
-
-        Ok(())
-    }
-
-    unsafe fn validate_subrange(buf: &[Self::Char]) -> Result<(), Self::Error> {
-        if let Some(0xDC00..=0xDFFF) = buf.first() {
-            Err(UtfError {
-                pos: 0,
-                len: Some(1),
-            })
-        } else if let Some(0xD800..=0xDBFF) = buf.last() {
-            Err(UtfError {
-                pos: buf.len() - 1,
-                len: None,
-            })
-        } else {
-            Ok(())
-        }
-    }
-
-    fn compare(r1: &[Self::Char], r2: &[Self::Char]) -> Result<Ordering, Self::Error> {
-        Ok(r1.cmp(r2))
-    }
-
-    fn zero_term() -> Self::Char {
-        0
-    }
-
-    fn eof() -> Self::Int {
-        -1
-    }
-}
-
-impl CharTraits for UtfCharTraits<char> {
-    type Char = char;
-
-    type Int = i32;
-
-    type Error = Infallible;
-
-    fn validate_range(_: &[Self::Char]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    unsafe fn validate_subrange(_: &[Self::Char]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn compare(r1: &[Self::Char], r2: &[Self::Char]) -> Result<Ordering, Self::Error> {
-        Ok(r1.cmp(r2))
-    }
-
-    fn zero_term() -> Self::Char {
-        '\0'
-    }
-
-    fn eof() -> Self::Int {
-        -1
-    }
-}
+#[cfg(not(feature = "const-utf-char-traits"))]
+include!("utf_char_traits.rs");
 
 unsafe impl IntoChars for UtfCharTraits<u8> {
     unsafe fn decode_buf_unchecked(buf: &[Self::Char]) -> (char, &[Self::Char]) {
@@ -249,34 +118,34 @@ unsafe impl IntoChars for UtfCharTraits<u8> {
             (buf[0] as char, buf.get_unchecked(1..))
         } else if buf[0] & 0xe0 == 0xc0 {
             let val = ((buf[0] & 0x1f) as u32) << 6 | ((buf[1] & 0x3f) as u32);
-            (char::from_u32_unchecked(val), buf.get_unchecked(2..))
+            (char::from_u32_unchecked(val), buf.get(2..).unwrap_or(&[]))
         } else if buf[0] & 0xf0 == 0xe0 {
             let val = ((buf[0] & 0x1f) as u32) << 12
                 | ((*buf.get_unchecked(1) & 0x3f) as u32) << 6
                 | ((*buf.get_unchecked(2) & 0x3f) as u32);
-            (char::from_u32_unchecked(val), buf.get_unchecked(3..))
+            (char::from_u32_unchecked(val), buf.get(3..).unwrap_or(&[]))
         } else {
             let val = ((buf[0] & 0x7) as u32) << 18
                 | ((*buf.get_unchecked(1) & 0x3f) as u32) << 12
                 | ((*buf.get_unchecked(2) & 0x3f) as u32) << 6
                 | ((*buf.get_unchecked(3) & 0x3f) as u32);
-            (char::from_u32_unchecked(val), buf.get_unchecked(4..))
+            (char::from_u32_unchecked(val), buf.get(4..).unwrap_or(&[]))
         }
     }
 
     fn decode_buf(buf: &[Self::Char]) -> Option<(char, &[Self::Char])> {
         let c0 = *buf.get(0)?;
         if c0 & 0x80 == 0x00 {
-            Some((c0 as char, &buf[1..]))
+            Some((c0 as char, buf.get(1..).unwrap_or(&[])))
         } else if c0 & 0xe0 == 0xc0 {
             let c1 = *buf.get(1)?;
             let val = ((c0 & 0x1f) as u32) << 6 | ((c1 & 0x3f) as u32);
-            Some((char::from_u32(val)?, &buf[2..]))
+            Some((char::from_u32(val)?, buf.get(2..).unwrap_or(&[])))
         } else if c0 & 0xf0 == 0xe0 {
             let c1 = *buf.get(1)?;
             let c2 = *buf.get(2)?;
             let val = ((c0 & 0xf) as u32) << 12 | ((c1 & 0x3f) as u32) << 6 | ((c2 & 0x3f) as u32);
-            Some((char::from_u32(val)?, &buf[2..]))
+            Some((char::from_u32(val)?, buf.get(3..).unwrap_or(&[])))
         } else if c0 & 0xf8 == 0xf0 {
             let c1 = *buf.get(1)?;
             let c2 = *buf.get(2)?;
@@ -285,7 +154,7 @@ unsafe impl IntoChars for UtfCharTraits<u8> {
                 | ((c1 & 0x3f) as u32) << 12
                 | ((c2 & 0x3f) as u32) << 6
                 | ((c3 & 0x3f) as u32);
-            Some((char::from_u32(val)?, &buf[2..]))
+            Some((char::from_u32(val)?, buf.get(4..).unwrap_or(&[])))
         } else {
             None
         }
@@ -308,7 +177,7 @@ unsafe impl IntoChars for UtfCharTraits<u16> {
         if (0xD800..=0xDBFF).contains(&v0) {
             let v1 = *buf.get_unchecked(1);
             let val = ((v0 - 0xD800) as u32) << 10 | ((v1 - 0xDC00) as u32);
-            (char::from_u32_unchecked(val), buf.get_unchecked(2..))
+            (char::from_u32_unchecked(val), buf.get(2..).unwrap_or(&[]))
         } else {
             (char::from_u32_unchecked(v0 as u32), buf.get_unchecked(1..))
         }
@@ -322,9 +191,9 @@ unsafe impl IntoChars for UtfCharTraits<u16> {
                 return None;
             }
             let val = ((v0 - 0xD800) as u32) << 10 | ((v1 - 0xDC00) as u32);
-            Some((char::from_u32(val)?, &buf[2..]))
+            Some((char::from_u32(val)?, buf.get(2..).unwrap_or(&[])))
         } else {
-            Some((char::from_u32(v0 as u32)?, &buf[1..]))
+            Some((char::from_u32(v0 as u32)?, buf.get(2..).unwrap_or(&[])))
         }
     }
 
@@ -339,11 +208,11 @@ unsafe impl IntoChars for UtfCharTraits<u16> {
 
 unsafe impl IntoChars for UtfCharTraits<char> {
     unsafe fn decode_buf_unchecked(buf: &[Self::Char]) -> (char, &[Self::Char]) {
-        (*buf.get_unchecked(0), buf.get_unchecked(1..))
+        (*buf.get_unchecked(0), buf.get(1..).unwrap_or(&[]))
     }
 
     fn decode_buf(buf: &[Self::Char]) -> Option<(char, &[Self::Char])> {
-        Some((*buf.get(0)?, buf.get(1..)?))
+        Some((*buf.get(0)?, buf.get(1..).unwrap_or(&[])))
     }
 
     fn max_encoding_len() -> usize {

@@ -132,7 +132,7 @@ pub trait ValidationError: core::fmt::Debug {
 /// A trait for types that can be used in String Types and String Views/String Slices
 pub trait CharTraits {
     /// The Character Type for these traits
-    type Char: Char<Int = Self::Int>;
+    type Char: Char<Int = Self::Int> + Eq;
     /// The Integer type
     type Int: Copy + Sized + Ord;
     /// The Type that Is returned when validation of a range fails
@@ -170,12 +170,20 @@ pub trait CharTraits {
     ///
     /// # Errors
     ///
-    /// Returns an error if the subrange isn't valid
+    /// May return an error or an implementation defined result if either range is not valid according to [`CharTraits::validate_range`]
     ///
     fn compare(r1: &[Self::Char], r2: &[Self::Char]) -> Result<Ordering, Self::Error>;
 
     /// The character to append to/search for in null terminated strings
+    ///
+    /// Removal of a trailing zero terminator shall not affect the validity.
+    /// `unsafe` code using `unsafe` functions in this and any subtrait,
+    /// or any functions in `unsafe` subtraits may rely on this property for those functions
     fn zero_term() -> Self::Char;
+
+    /// Checks if the given character is the zero terminator
+    /// [`CharTraits::is_zero_term`] shall hold for [`CharTraits::zero_term`]
+    fn is_zero_term(c: Self::Char) -> bool;
 
     /// The "End of File" Sentinel.
     /// This is typically not a possible value of `Char`
@@ -186,6 +194,7 @@ pub trait CharTraits {
 ///
 /// # Safety
 /// The behaviour of the `encode` and `max_encoding_len` methods must be as-defined.
+/// [`CharTraits::validate_range`] shall not differ between ranges with or without a trailing [`CharTraits::zero_term`]
 pub unsafe trait IntoChars: CharTraits {
     /// Decodes the given buf into a char, and returns it and the remainder of the buffer.
     ///
@@ -234,7 +243,9 @@ pub trait DebugStr: CharTraits {
     ///
     /// # Safety
     ///
-    /// This function may have undefined behaviour if validation would fail (according to [`CharTraits::validate_range`])
+    /// This function may have undefined behaviour if validation would fail (according to [`CharTraits::validate_range`]).
+    ///
+    /// It is safe to call this function on a range that is valid with an additional trailing [`CharTraits::zero_term`]
     unsafe fn debug_range_unchecked(
         range: &[Self::Char],
         fmt: &mut core::fmt::Formatter<'_>,
@@ -262,6 +273,8 @@ pub trait DisplayStr: CharTraits {
     /// # Safety
     ///
     /// This function may have undefined behaviour if validation would fail (according to [`CharTraits::validate_range`])
+    ///
+    /// It is safe to call this function on a range that is valid with an additional trailing [`CharTraits::zero_term`]
     unsafe fn display_range_unchecked(
         range: &[Self::Char],
         fmt: &mut core::fmt::Formatter<'_>,
