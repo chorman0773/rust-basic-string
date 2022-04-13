@@ -25,4 +25,3 @@ pub struct BasicCString<CharT, Traits, A: Allocator = Global> {
     _traits: PhantomData<Traits>,
     _allocator: PhantomData<A>,
 }
-
