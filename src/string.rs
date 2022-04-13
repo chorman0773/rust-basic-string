@@ -51,8 +51,8 @@ impl<CharT, Traits> BasicString<CharT, Traits, Global> {
     }
 }
 
-#[cfg(feature = "allocator-api")]
 impl<CharT, Traits, A: Allocator> BasicString<CharT, Traits, A> {
+    #[cfg(feature = "allocator-api")]
     pub const fn new_in(alloc: A) -> Self {
         Self {
             inner: Vec::new_in(alloc),
@@ -60,7 +60,7 @@ impl<CharT, Traits, A: Allocator> BasicString<CharT, Traits, A> {
             _allocator: PhantomData,
         }
     }
-
+    #[cfg(feature = "allocator-api")]
     pub fn with_capacity_in(cap: usize, alloc: A) -> Self {
         Self {
             inner: Vec::with_capacity_in(cap, alloc),

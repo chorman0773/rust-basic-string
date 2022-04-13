@@ -1,9 +1,12 @@
 use core::{cmp::Ordering, hash::Hash, marker::PhantomData};
 
 use crate::{
+    str::BasicStr,
     traits::{Char, CharTraits, DebugStr, DisplayStr},
-    utf::UtfCharTraits,
 };
+
+#[cfg(feature = "utf")]
+use crate::utf::UtfCharTraits;
 
 #[repr(transparent)]
 pub struct BasicCStr<CharT, Traits>(PhantomData<Traits>, [CharT]);
@@ -63,6 +66,23 @@ impl<CharT, Traits> BasicCStr<CharT, Traits> {
 
     pub const fn len(&self) -> usize {
         self.1.len()
+    }
+
+    ///
+    /// Converts the `CStr` into a `Str` that includes the zero terminator.
+    /// This may
+    pub const fn as_basic_str_with_nul(&self) -> &BasicStr<CharT, Traits> {
+        // SAFETY:
+        // We're validiated w/ the zero terminator
+        unsafe { BasicStr::from_chars_unchecked(self.as_chars()) }
+    }
+
+    pub const fn as_basic_str_without_nul(&self) -> &BasicStr<CharT, Traits> {
+        if let Some((_, rest)) = self.as_chars().split_last() {
+            unsafe { BasicStr::from_chars_unchecked(rest) }
+        } else {
+            unsafe { core::hint::unreachable_unchecked() }
+        }
     }
 }
 

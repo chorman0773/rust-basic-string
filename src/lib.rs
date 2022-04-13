@@ -18,3 +18,6 @@ pub mod traits;
 #[cfg(feature = "utf")]
 pub mod utf;
 pub mod view;
+
+#[cfg(feature = "pattern")]
+pub mod pattern;

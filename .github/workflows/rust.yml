@@ -1,0 +1,31 @@
+name: Rust
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+    - name: Install stable
+      run: |
+        rustup toolchain add nightly 
+        rustup default nightly
+        rustup update
+    - name: Install cargo-hack
+      run: |
+         cargo install cargo-hack
+    - name: Build
+      run: cargo hack build --verbose --feature-powerset
+    - name: Run tests
+      run: cargo hack test --verbose --feature-powerset
+

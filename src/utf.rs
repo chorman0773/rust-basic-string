@@ -1,6 +1,8 @@
 use core::{cmp::Ordering, convert::Infallible, marker::PhantomData, str::Utf8Error};
 
-use crate::traits::{Char, CharTraits, DebugStr, DisplayStr, IntoChars, ValidationError};
+use crate::traits::{
+    Char, CharTraits, DebugStr, DecodeRev, DisplayStr, IntoChars, ValidationError,
+};
 
 use self::private::UtfIntoChars;
 
@@ -169,6 +171,50 @@ unsafe impl IntoChars for UtfCharTraits<u8> {
         // the intermediate &mut str is never used, and only exists because that's what [`char::encode_utf8`] returns apparently
         unsafe { c.encode_utf8(buf).as_bytes_mut() }
     }
+
+    fn encoding_len(c: char) -> usize {
+        c.len_utf8()
+    }
+}
+
+unsafe impl DecodeRev for UtfCharTraits<u8> {
+    unsafe fn decode_back_unchecked(mut buf: &[Self::Char]) -> (char, &[Self::Char]) {
+        let mut val = 0;
+        for i in 0.. {
+            let (&b, rest) = buf.split_last().unwrap_unchecked();
+            buf = rest;
+            if b & 0xC0 != 0x80 {
+                val |= (b as u32 & ((0x100 >> i) - 1)) << (6 * i);
+                break;
+            } else {
+                val |= (b as u32 & 0x3f) << (6 * i);
+            }
+        }
+
+        (char::from_u32_unchecked(val), buf)
+    }
+
+    fn decode_back(mut buf: &[Self::Char]) -> Option<(char, &[Self::Char])> {
+        let mut val = 0;
+        for i in 0.. {
+            if i == 4 {
+                return None;
+            }
+            let (&b, rest) = buf.split_last()?;
+            buf = rest;
+            if b & 0xC0 != 0x80 {
+                if (i == 0 && b.leading_ones() != 1) || (b.leading_ones() != (i + 1)) {
+                    return None;
+                }
+                val |= (b as u32 & ((0x100 >> i) - 1)) << (6 * i);
+                break;
+            } else {
+                val |= (b as u32 & 0x3f) << (6 * i);
+            }
+        }
+
+        Some((char::from_u32(val)?, buf))
+    }
 }
 
 unsafe impl IntoChars for UtfCharTraits<u16> {
@@ -204,6 +250,43 @@ unsafe impl IntoChars for UtfCharTraits<u16> {
     fn encode(c: char, buf: &mut [Self::Char]) -> &mut [Self::Char] {
         c.encode_utf16(buf)
     }
+
+    fn encoding_len(c: char) -> usize {
+        if (c as u32) < 0xFFFF {
+            1
+        } else {
+            2
+        }
+    }
+}
+
+unsafe impl DecodeRev for UtfCharTraits<u16> {
+    unsafe fn decode_back_unchecked(buf: &[Self::Char]) -> (char, &[Self::Char]) {
+        let (v1, rest) = buf.split_last().unwrap_unchecked();
+
+        if (0xDC00..=0xDFFF).contains(v1) {
+            let (v0, rest) = rest.split_last().unwrap_unchecked();
+            let val = ((*v0 - 0xD800) as u32) << 10 | ((*v1 - 0xDC00) as u32);
+            (char::from_u32_unchecked(val), rest)
+        } else {
+            (char::from_u32_unchecked(*v1 as u32), rest)
+        }
+    }
+
+    fn decode_back(buf: &[Self::Char]) -> Option<(char, &[Self::Char])> {
+        let (v1, rest) = buf.split_last()?;
+
+        if (0xDC00..=0xDFFF).contains(v1) {
+            let (v0, rest) = rest.split_last()?;
+            if !(0xD800..=0xDBFF).contains(v0) {
+                return None;
+            }
+            let val = ((*v0 - 0xD800) as u32) << 10 | ((*v1 - 0xDC00) as u32);
+            Some((unsafe { char::from_u32_unchecked(val) }, rest))
+        } else {
+            Some((unsafe { char::from_u32_unchecked(*v1 as u32) }, rest))
+        }
+    }
 }
 
 unsafe impl IntoChars for UtfCharTraits<char> {
@@ -222,6 +305,22 @@ unsafe impl IntoChars for UtfCharTraits<char> {
     fn encode(c: char, buf: &mut [Self::Char]) -> &mut [Self::Char] {
         buf[0] = c;
         &mut buf[0..1]
+    }
+
+    fn encoding_len(_: char) -> usize {
+        1
+    }
+}
+
+unsafe impl DecodeRev for UtfCharTraits<char> {
+    #[inline(always)]
+    unsafe fn decode_back_unchecked(buf: &[Self::Char]) -> (char, &[Self::Char]) {
+        Self::decode_back(buf).unwrap_unchecked()
+    }
+
+    #[inline]
+    fn decode_back(buf: &[Self::Char]) -> Option<(char, &[Self::Char])> {
+        buf.split_last().map(|(c, rest)| (*c, rest))
     }
 }
 

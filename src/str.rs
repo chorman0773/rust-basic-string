@@ -6,10 +6,13 @@ use core::{marker::PhantomData, slice::SliceIndex};
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
-use crate::{
-    traits::{Char, CharTraits, DebugStr, DisplayStr},
-    utf::UtfCharTraits,
-};
+#[cfg(feature = "pattern")]
+use crate::pattern::{BidirectionalPattern, Pattern, RevPattern};
+use crate::traits::IntoChars;
+use crate::traits::{Char, CharTraits, DebugStr, DisplayStr};
+
+#[cfg(feature = "utf")]
+use crate::utf::UtfCharTraits;
 
 #[repr(transparent)]
 pub struct BasicStr<CharT, CharTraits>(PhantomData<CharTraits>, [CharT]);
@@ -69,6 +72,217 @@ impl<CharT, Traits> BasicStr<CharT, Traits> {
     ) -> Box<Self, A> {
         let (ptr, alloc) = Box::into_raw_with_allocator(chars);
         Box::from_raw_in(ptr as *mut Self, alloc)
+    }
+
+    pub const fn len(&self) -> usize {
+        self.1.len()
+    }
+
+    pub const fn as_ptr(&self) -> *const CharT {
+        self.1.as_ptr()
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut CharT {
+        self.1.as_mut_ptr()
+    }
+}
+
+#[cfg(feature = "pattern")]
+impl<CharT, Traits> BasicStr<CharT, Traits> {
+    pub fn split_once<'a, P: Pattern<CharT, Traits>>(
+        &'a self,
+        delimiter: P,
+    ) -> Option<(&'a Self, &'a Self)> {
+        // Safety:
+        // `self` is valid by invariant
+        let pat = unsafe { delimiter.first_match_unchecked(&self.1) }?;
+
+        // Safety:
+        // Guaranteed by the `Pattern` impl
+        let begin = unsafe { pat.as_ptr().offset_from(self.as_ptr()) } as usize;
+
+        let end = begin + pat.len();
+
+        // Safety:
+        // Guaranteed by the `Pattern` impl
+        Some(unsafe {
+            (
+                Self::from_chars_unchecked(self.1.get_unchecked(..begin)),
+                Self::from_chars_unchecked(self.1.get_unchecked(end..)),
+            )
+        })
+    }
+
+    pub fn find<P: Pattern<CharT, Traits>>(&self, pat: P) -> Option<usize> {
+        // Safety:
+        // `self` is valid by invariant
+        let pat = unsafe { pat.first_match_unchecked(&self.1) }?;
+
+        // Safety:
+        // Guaranteed by the `Pattern` impl
+        let begin = unsafe { pat.as_ptr().offset_from(self.as_ptr()) } as usize;
+
+        Some(begin)
+    }
+
+    pub fn rsplit_once<'a, P: RevPattern<CharT, Traits>>(
+        &'a self,
+        delimiter: P,
+    ) -> Option<(&'a Self, &'a Self)> {
+        // Safety:
+        // `self` is valid by invariant
+        let pat = unsafe { delimiter.last_match_unchecked(&self.1) }?;
+
+        // Safety:
+        // Guaranteed by the `Pattern` impl
+        let begin = unsafe { pat.as_ptr().offset_from(self.as_ptr()) } as usize;
+
+        let end = begin + pat.len();
+
+        // Safety:
+        // Guaranteed by the `Pattern` impl
+        Some(unsafe {
+            (
+                Self::from_chars_unchecked(self.1.get_unchecked(..begin)),
+                Self::from_chars_unchecked(self.1.get_unchecked(end..)),
+            )
+        })
+    }
+
+    pub fn rfind<P: RevPattern<CharT, Traits>>(&self, pat: P) -> Option<usize> {
+        // Safety:
+        // `self` is valid by invariant
+        let pat = unsafe { pat.last_match_unchecked(&self.1) }?;
+
+        // Safety:
+        // Guaranteed by the `Pattern` impl
+        let begin = unsafe { pat.as_ptr().offset_from(self.as_ptr()) } as usize;
+
+        Some(begin)
+    }
+
+    pub fn split<P: Pattern<CharT, Traits>>(&self, pat: P) -> Split<P, CharT, Traits> {
+        Split(Some(self), pat)
+    }
+
+    pub fn rsplit<P: RevPattern<CharT, Traits>>(&self, pat: P) -> RSplit<P, CharT, Traits> {
+        RSplit(Some(self), pat)
+    }
+}
+
+#[cfg(feature = "pattern")]
+pub struct Split<'a, P, CharT, Traits>(Option<&'a BasicStr<CharT, Traits>>, P);
+
+#[cfg(feature = "pattern")]
+pub struct RSplit<'a, P, CharT, Traits>(Option<&'a BasicStr<CharT, Traits>>, P);
+
+#[cfg(feature = "pattern")]
+impl<'a, P, CharT, Traits> Iterator for Split<'a, P, CharT, Traits>
+where
+    P: Pattern<CharT, Traits>,
+{
+    type Item = &'a BasicStr<CharT, Traits>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(test) = self.0.take() {
+            let pat = unsafe { self.1.first_match_unchecked(test.as_chars()) };
+
+            if let Some(pat) = pat {
+                // Safety:
+                // Guaranteed by the `Pattern` impl
+                let begin = unsafe { pat.as_ptr().offset_from(test.as_ptr()) } as usize;
+
+                let end = begin + pat.len();
+                self.0 = Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[end..]) });
+                Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[..begin]) })
+            } else {
+                Some(test)
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "pattern")]
+impl<'a, P, CharT, Traits> Iterator for RSplit<'a, P, CharT, Traits>
+where
+    P: RevPattern<CharT, Traits>,
+{
+    type Item = &'a BasicStr<CharT, Traits>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(test) = self.0.take() {
+            let pat = unsafe { self.1.last_match_unchecked(test.as_chars()) };
+
+            if let Some(pat) = pat {
+                // Safety:
+                // Guaranteed by the `Pattern` impl
+                let begin = unsafe { pat.as_ptr().offset_from(test.as_ptr()) } as usize;
+
+                let end = begin + pat.len();
+                self.0 = Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[..begin]) });
+
+                Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[end..]) })
+            } else {
+                Some(test)
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "pattern")]
+impl<'a, P, CharT, Traits> DoubleEndedIterator for Split<'a, P, CharT, Traits>
+where
+    P: BidirectionalPattern<CharT, Traits>,
+{
+    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
+        if let Some(test) = self.0.take() {
+            let pat = unsafe { self.1.last_match_unchecked(test.as_chars()) };
+
+            if let Some(pat) = pat {
+                // Safety:
+                // Guaranteed by the `Pattern` impl
+                let begin = unsafe { pat.as_ptr().offset_from(test.as_ptr()) } as usize;
+
+                let end = begin + pat.len();
+                self.0 = Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[..begin]) });
+
+                Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[end..]) })
+            } else {
+                Some(test)
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "pattern")]
+impl<'a, P, CharT, Traits> DoubleEndedIterator for RSplit<'a, P, CharT, Traits>
+where
+    P: BidirectionalPattern<CharT, Traits>,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if let Some(test) = self.0.take() {
+            let pat = unsafe { self.1.first_match_unchecked(test.as_chars()) };
+
+            if let Some(pat) = pat {
+                // Safety:
+                // Guaranteed by the `Pattern` impl
+                let begin = unsafe { pat.as_ptr().offset_from(test.as_ptr()) } as usize;
+
+                let end = begin + pat.len();
+                self.0 = Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[end..]) });
+                Some(unsafe { BasicStr::from_chars_unchecked(&test.as_chars()[..begin]) })
+            } else {
+                Some(test)
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -168,6 +382,34 @@ impl<CharT, Traits: CharTraits<Char = CharT>> BasicStr<CharT, Traits> {
     ) -> &mut Self {
         Self::from_chars_unchecked_mut(self.1.get_unchecked_mut(range))
     }
+
+    pub fn split_at(&self, mid: usize) -> (&Self, &Self) {
+        let (left, right) = self.1.split_at(mid);
+
+        unsafe { Traits::validate_subrange(left) }.unwrap();
+        unsafe { Traits::validate_subrange(right) }.unwrap();
+
+        unsafe {
+            (
+                Self::from_chars_unchecked(left),
+                Self::from_chars_unchecked(right),
+            )
+        }
+    }
+
+    pub fn split_at_mut(&mut self, mid: usize) -> (&mut Self, &mut Self) {
+        let (left, right) = self.1.split_at_mut(mid);
+
+        unsafe { Traits::validate_subrange(left) }.unwrap();
+        unsafe { Traits::validate_subrange(right) }.unwrap();
+
+        unsafe {
+            (
+                Self::from_chars_unchecked_mut(left),
+                Self::from_chars_unchecked_mut(right),
+            )
+        }
+    }
 }
 
 #[cfg(not(feature = "const-trait-impl"))]
@@ -175,7 +417,7 @@ impl<'a, C, Traits> Default for &'a BasicStr<C, Traits>
 where
     BasicStr<C, Traits>: 'a,
 {
-    fn default() -> &'a BasicStr<C, Trait> {
+    fn default() -> &'a BasicStr<C, Traits> {
         unsafe { BasicStr::from_chars_unchecked(&[]) }
     }
 }
@@ -293,7 +535,7 @@ impl AsRef<str> for Str {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "utf"))]
 impl AsRef<std::ffi::OsStr> for Str {
     fn as_ref(&self) -> &std::ffi::OsStr {
         std::ffi::OsStr::new(<Self as AsRef<str>>::as_ref(self))
@@ -339,5 +581,58 @@ impl<CharT: Eq, Traits> Eq for BasicStr<CharT, Traits> {}
 impl<CharT: Hash, Traits> Hash for BasicStr<CharT, Traits> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.1.hash(state);
+    }
+}
+
+pub struct Chars<'a, CharT>(core::slice::Iter<'a, CharT>);
+
+impl<CharT: Copy> Iterator for Chars<'_, CharT> {
+    type Item = CharT;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().copied()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl<CharT: Copy> ExactSizeIterator for Chars<'_, CharT> {}
+
+impl<CharT, Traits> BasicStr<CharT, Traits> {
+    pub fn chars(&self) -> Chars<CharT> {
+        Chars(self.1.iter())
+    }
+}
+
+pub struct UnicodeIter<'a, CharT, Traits>(&'a [CharT], PhantomData<Traits>);
+
+impl<Traits: IntoChars> Iterator for UnicodeIter<'_, Traits::Char, Traits> {
+    type Item = char;
+    fn next(&mut self) -> Option<char> {
+        if self.0.is_empty() {
+            None
+        } else {
+            // SAFETY:
+            // We've still got some buffer left, and we know it to be valid, since it came from `BasicStr`
+            let (ch, rest) = unsafe { Traits::decode_buf_unchecked(self.0) };
+
+            self.0 = rest;
+            Some(ch)
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.0.len() / Traits::max_encoding_len(),
+            Some(self.0.len()),
+        )
+    }
+}
+
+impl<Traits: IntoChars> BasicStr<Traits::Char, Traits> {
+    pub fn unicode_iter(&self) -> UnicodeIter<Traits::Char, Traits> {
+        UnicodeIter(&self.1, PhantomData)
     }
 }

@@ -225,6 +225,22 @@ pub unsafe trait IntoChars: CharTraits {
     /// This function panics if `buf` is not sufficiently sized to encode `c`.
     /// The necessary size is implementation-defined, but is at most [`IntoChars::max_encoding_len`]
     fn encode(c: char, buf: &mut [Self::Char]) -> &mut [Self::Char];
+
+    /// The exact length of the buf necessary to `encode` `c`
+    fn encoding_len(c: char) -> usize;
+}
+
+pub unsafe trait DecodeRev: IntoChars {
+    /// Decodes from the back of the given buffer into a char, and returns it and the remainder of the buffer.
+    ///
+    /// # Safety
+    /// `buf` shall be valid according to [`CharTraits::validate_range`]
+    unsafe fn decode_back_unchecked(buf: &[Self::Char]) -> (char, &[Self::Char]);
+
+    /// Decodes from the back of the given buffer into a char if possible, and returns it and the remainder of the buffer.
+    ///
+    /// May return `None` or an implementation-defined `char` if `buf` is invalid according to [`CharTraits::validate_range`]
+    fn decode_back(buf: &[Self::Char]) -> Option<(char, &[Self::Char])>;
 }
 
 pub trait DebugStr: CharTraits {
