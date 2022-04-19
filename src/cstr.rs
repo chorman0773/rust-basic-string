@@ -122,6 +122,50 @@ impl<Traits: CharTraits> BasicCStr<Traits::Char, Traits> {
         }
     }
 
+    ///
+    /// Converts the shortest null terminated subrange of `chars` into a [`BasicCStr`].
+    ///
+    /// Returns that converted cstr and the remainder of the range if it is valid (according to [`CharTraits::validate_range`])
+    pub fn split_from_chars(chars: &[Traits::Char]) -> Option<(&Self, &[Traits::Char])> {
+        for (i, &c) in chars.iter().enumerate() {
+            if Traits::is_zero_term(c) {
+                let (left, right) = chars.split_at(i + 1);
+
+                return Traits::validate_range(left)
+                    .map(|_| (unsafe { Self::from_chars_with_null_unchecked(left) }, right))
+                    .ok();
+            }
+        }
+
+        None
+    }
+
+    ///
+    /// Converts the shortest null terminated subrange of `chars` into a [`BasicCStr`].
+    ///
+    /// Returns that converted cstr and the remainder of the range if it is valid (according to [`CharTraits::validate_range`])
+    pub fn split_from_chars_mut(
+        chars: &mut [Traits::Char],
+    ) -> Option<(&mut Self, &mut [Traits::Char])> {
+        for (i, &c) in chars.iter().enumerate() {
+            if Traits::is_zero_term(c) {
+                let (left, right) = chars.split_at_mut(i + 1);
+
+                match Traits::validate_range(left) {
+                    Ok(()) => {
+                        return Some((
+                            unsafe { Self::from_chars_with_null_unchecked_mut(left) },
+                            right,
+                        ))
+                    }
+                    Err(_) => return None,
+                }
+            }
+        }
+
+        None
+    }
+
     /// Obtains a [`BasicCStr`] slice over the null terminated string starting at `begin`.
     ///
     /// # Safety
