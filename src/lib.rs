@@ -12,6 +12,9 @@ pub mod cstr;
 #[cfg(feature = "alloc")]
 pub mod cstring;
 pub mod str;
+
+pub mod array_str;
+
 #[cfg(feature = "alloc")]
 pub mod string;
 pub mod traits;

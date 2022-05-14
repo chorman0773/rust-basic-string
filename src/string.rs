@@ -14,7 +14,9 @@ use alloc::alloc::{Allocator, Global};
 use crate::placeholders::*;
 
 use crate::str::BasicStr;
+use crate::traits::Char;
 use crate::traits::CharTraits;
+use crate::traits::IntoChars;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -106,6 +108,13 @@ impl<CharT, Traits, A: Allocator> BasicString<CharT, Traits, A> {
     pub fn from_boxed_str(str: Box<BasicStr<CharT, Traits>>) -> Self {
         unsafe { Self::from_chars_unchecked(str.into_boxed_chars().into()) }
     }
+
+    pub fn push_str(&mut self, s: &BasicStr<CharT, Traits>)
+    where
+        CharT: Char,
+    {
+        self.inner.extend_from_slice(s.as_chars());
+    }
 }
 
 #[cfg(feature = "allocator-api")]
@@ -180,6 +189,18 @@ impl<Traits: CharTraits, A: Allocator> BasicString<Traits::Char, Traits, A> {
                 _allocator: PhantomData,
             }),
         }
+    }
+}
+
+impl<Traits: CharTraits + IntoChars, A: Allocator> BasicString<Traits::Char, Traits, A> {
+    pub fn push(&mut self, c: char) {
+        let base_len = self.len();
+        let len = base_len.saturating_add(Traits::encoding_len(c));
+
+        self.inner.resize_with(len, Traits::zero_term); // Use Zero-term as a default-init state
+
+        let right = &mut self.inner[base_len..];
+        Traits::encode(c, right);
     }
 }
 
