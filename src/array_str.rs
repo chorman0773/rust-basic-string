@@ -1,4 +1,5 @@
 use core::borrow::{Borrow, BorrowMut};
+use core::cmp::Ordering;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
@@ -9,28 +10,83 @@ use crate::utf::UtfCharTraits;
 
 pub struct BasicArrayString<CharT, Traits, const N: usize>([CharT; N], PhantomData<Traits>);
 
+impl<CharT: Copy, Traits, const N: usize> Copy for BasicArrayString<CharT, Traits, N> {}
+
+impl<CharT: Clone, Traits, const N: usize> Clone for BasicArrayString<CharT, Traits, N> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+impl<CharT: PartialEq, Traits, const N: usize, const M: usize>
+    PartialEq<BasicArrayString<CharT, Traits, M>> for BasicArrayString<CharT, Traits, N>
+{
+    fn eq(&self, rhs: &BasicArrayString<CharT, Traits, M>) -> bool {
+        self.as_chars() == rhs.as_chars()
+    }
+}
+
+impl<CharT: PartialEq, Traits, const N: usize> PartialEq<BasicStr<CharT, Traits>>
+    for BasicArrayString<CharT, Traits, N>
+{
+    fn eq(&self, rhs: &BasicStr<CharT, Traits>) -> bool {
+        &self.0 == rhs.as_chars()
+    }
+}
+
+impl<CharT: Eq, Traits, const N: usize> Eq for BasicArrayString<CharT, Traits, N> {}
+
+impl<Traits: CharTraits, const N: usize, const M: usize>
+    PartialOrd<BasicArrayString<Traits::Char, Traits, M>>
+    for BasicArrayString<Traits::Char, Traits, N>
+{
+    fn partial_cmp(&self, rhs: &BasicArrayString<Traits::Char, Traits, M>) -> Option<Ordering> {
+        Some(unsafe { Traits::compare(&self.0, &rhs.0).unwrap_unchecked() })
+    }
+}
+
+impl<Traits: CharTraits, const N: usize> PartialOrd<BasicStr<Traits::Char, Traits>>
+    for BasicArrayString<Traits::Char, Traits, N>
+{
+    fn partial_cmp(&self, rhs: &BasicStr<Traits::Char, Traits>) -> Option<Ordering> {
+        Some(unsafe { Traits::compare(&self.0, rhs.as_chars()).unwrap_unchecked() })
+    }
+}
+
+impl<Traits: CharTraits, const N: usize> Ord for BasicArrayString<Traits::Char, Traits, N> {
+    fn cmp(&self, rhs: &Self) -> Ordering {
+        unsafe { Traits::compare(&self.0, &rhs.0).unwrap_unchecked() }
+    }
+}
+
 impl<CharT, CharTraits, const N: usize> BasicArrayString<CharT, CharTraits, N> {
+    #[inline]
     pub const unsafe fn from_chars_unchecked(chars: [CharT; N]) -> Self {
         Self(chars, PhantomData)
     }
 
+    #[inline]
     pub fn as_chars(&self) -> &[CharT] {
         &self.0
     }
 
+    #[inline]
     pub fn into_chars(self) -> [CharT; N] {
         self.0
     }
 
+    #[inline]
     pub unsafe fn as_chars_mut(&mut self) -> &mut [CharT] {
         &mut self.0
     }
 
+    #[inline]
     pub fn as_basic_str(&self) -> &BasicStr<CharT, CharTraits> {
         // SAFETY: We are already valid, by the invariant of BasicArrayString
         unsafe { BasicStr::from_chars_unchecked(&self.0) }
     }
 
+    #[inline]
     pub fn as_basic_str_mut(&mut self) -> &mut BasicStr<CharT, CharTraits> {
         // SAFETY: We are already valid, by the invariant of BasicArrayString
         unsafe { BasicStr::from_chars_unchecked_mut(&mut self.0) }
